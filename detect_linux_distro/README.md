@@ -21,11 +21,18 @@ A comprehensive shell script that detects Linux distribution versions and flavor
 - **KDE neon** - Latest KDE software on Ubuntu base
 
 #### Enterprise / Server
-- **Red Hat Enterprise Linux (RHEL)** - Commercial, enterprise support
+- **Red Hat Enterprise Linux (RHEL)** - Commercial, enterprise support (versions 2.1-10)
+- **Red Hat Enterprise Linux Server** - Server edition with enterprise features
+- **Red Hat Enterprise Linux Workstation** - Workstation edition for developers
+- **Red Hat Enterprise Linux Desktop** - Desktop edition for end users
+- **Red Hat Enterprise Linux Client** - Client edition for workstations
 - **CentOS Stream** - Rolling-release, community version of RHEL
+- **CentOS** - Traditional CentOS (legacy versions 5/6/7)
 - **Oracle Linux** - RHEL-compatible, optimized for Oracle workloads
 - **Rocky Linux** - Community-driven RHEL clone
 - **AlmaLinux** - Another RHEL-compatible community distribution
+- **Amazon Linux** - AWS-optimized enterprise distribution
+- **Scientific Linux** - RHEL-based distribution for scientific computing
 
 #### Lightweight / Older Hardware
 - **Puppy Linux** - Super lightweight, runs entirely in RAM
@@ -49,18 +56,30 @@ A comprehensive shell script that detects Linux distribution versions and flavor
 #### Minimal / Specialized
 - **Alpine Linux** - Security-oriented, lightweight Linux distribution
 - **Slackware** - One of the oldest Linux distributions
+- **SUSE** - Enterprise and community Linux distribution
 - **Asahi Linux** - Linux distribution for Apple Silicon Macs
+
+#### Embedded / Minimal
+- **Embedded Linux (ARM)** - ARM-based embedded systems
+- **Embedded Linux (MIPS)** - MIPS-based embedded systems
+- **Minimal Linux** - Systems with basic init and minimal tools
 
 ### 🔍 **Detection Methods**
 
-The script uses multiple detection methods in order of preference:
+The script uses multiple detection methods in order of preference for maximum compatibility:
 
 1. **`/etc/os-release`** - Primary method (LSB standard)
 2. **`/etc/lsb-release`** - Legacy LSB information
-3. **`/etc/redhat-release`** - Red Hat family distributions
-4. **`/etc/debian_version`** - Debian-based distributions
-5. **Distribution-specific files** - Arch, Gentoo, Alpine, etc.
-6. **Specialized detection** - Security distributions and variants
+3. **`/etc/redhat-release`** - Red Hat family distributions (enhanced RHEL detection)
+4. **`/etc/system-release`** - Amazon Linux and similar systems
+5. **`/etc/release`** - Solaris-like systems
+6. **`/etc/debian_version`** - Debian-based distributions
+7. **Distribution-specific files** - Arch, Gentoo, Alpine, etc.
+8. **`/etc/issue`** - Legacy login banner detection
+9. **`/proc/version`** - Kernel-based distribution detection (EL patterns)
+10. **Embedded system detection** - ARM/MIPS systems
+11. **`uname -a`** - Last resort detection method
+12. **RHEL legacy detection** - Specialized RHEL detection for all versions
 
 ### 📊 **Output Formats**
 
@@ -135,6 +154,8 @@ Hostname: ubuntu-server
 Uptime: up 2 days, 3 hours, 15 minutes
 Desktop Environment: GNOME
 Package Manager: APT (Advanced Package Tool)
+CPU Cores: 4
+Total Memory: 8GB
 ```
 
 #### Simple Output
@@ -155,6 +176,43 @@ Ubuntu 22.04
 **Sample Output:**
 ```
 General Purpose / Desktop
+```
+
+#### RHEL Detection Example
+```bash
+./detect_linux_distro.sh --json
+```
+
+**Sample RHEL Output:**
+```json
+{
+  "distribution": {
+    "name": "Red Hat Enterprise Linux Server",
+    "version": "7.9",
+    "id": "rhel",
+    "pretty_name": "Red Hat Enterprise Linux Server 7.9 (Maipo)",
+    "codename": "Maipo",
+    "description": "Red Hat Enterprise Linux Server 7.9 (Maipo)",
+    "full_info": "Red Hat Enterprise Linux Server release 7.9 (Maipo)",
+    "category": "Enterprise / Server"
+  },
+  "system": {
+    "kernel": "3.10.0-1160.el7.x86_64",
+    "architecture": "x86_64",
+    "hostname": "rhel-server",
+    "uptime": "up 45 days, 12 hours, 30 minutes",
+    "desktop_environment": "Unknown",
+    "package_manager": "YUM",
+    "cpu_cores": "8",
+    "total_memory": "32GB"
+  },
+  "detection": {
+    "timestamp": "2024-01-15T10:30:00Z",
+    "method": "shell_script",
+    "script_version": "1.2",
+    "legacy_compatible": true
+  }
+}
 ```
 
 #### JSON Output
@@ -181,12 +239,15 @@ General Purpose / Desktop
     "hostname": "ubuntu-server",
     "uptime": "up 2 days, 3 hours, 15 minutes",
     "desktop_environment": "GNOME",
-    "package_manager": "APT"
+    "package_manager": "APT",
+    "cpu_cores": "4",
+    "total_memory": "8GB"
   },
   "detection": {
     "timestamp": "2024-01-15T10:30:00Z",
     "method": "shell_script",
-    "script_version": "1.0"
+    "script_version": "1.1",
+    "legacy_compatible": true
   }
 }
 ```
@@ -212,11 +273,14 @@ The JSON output contains three main sections:
 - `uptime`: System uptime
 - `desktop_environment`: Desktop environment
 - `package_manager`: Package manager
+- `cpu_cores`: Number of CPU cores
+- `total_memory`: Total system memory
 
 ### Detection Information
 - `timestamp`: Detection timestamp (ISO 8601)
 - `method`: Detection method used
 - `script_version`: Script version
+- `legacy_compatible`: Legacy compatibility flag
 
 ## Use Cases
 
@@ -280,13 +344,71 @@ print(f"Category: {distro_info['distribution']['category']}")
 - **Bash**: Version 3.0 or higher
 - **Standard Unix Tools**: `grep`, `awk`, `cat`, `uname`, `hostname`, `uptime`, `date`
 - **No External Dependencies**: Pure shell script implementation
+- **Legacy Compatible**: Works on systems with minimal tools
+
+## RHEL Support
+
+### 🔴 **Complete Red Hat Enterprise Linux Detection**
+
+The script provides comprehensive support for all RHEL versions and variants:
+
+#### **Supported RHEL Versions**
+- **RHEL 2.1** - Legacy enterprise Linux (2002)
+- **RHEL 3** - Enterprise Linux 3 (2003)
+- **RHEL 4** - Enterprise Linux 4 (2005)
+- **RHEL 5** - Enterprise Linux 5 (2007)
+- **RHEL 6** - Enterprise Linux 6 (2010)
+- **RHEL 7** - Enterprise Linux 7 (2014)
+- **RHEL 8** - Enterprise Linux 8 (2019)
+- **RHEL 9** - Enterprise Linux 9 (2022)
+- **RHEL 10** - Enterprise Linux 10 (future)
+
+#### **RHEL Variants Detected**
+- **Red Hat Enterprise Linux Server** - Server edition
+- **Red Hat Enterprise Linux Workstation** - Developer workstation
+- **Red Hat Enterprise Linux Desktop** - End-user desktop
+- **Red Hat Enterprise Linux Client** - Client workstation
+
+#### **Detection Methods for RHEL**
+1. **`/etc/redhat-release`** - Primary RHEL detection
+2. **`/etc/issue`** - Legacy login banner parsing
+3. **`/proc/version`** - Kernel-based EL pattern detection
+4. **RHEL legacy detection** - Specialized RHEL functions
+5. **Kernel patterns** - EL2, EL3, EL4, EL5, EL6, EL7, EL8, EL9, EL10
+
+## Legacy Compatibility
+
+### 🛡️ **Legacy Server Support**
+
+The script is specifically designed for maximum compatibility with legacy systems:
+
+- **RHEL 2.1-10**: Complete support for all RHEL versions including legacy 2.1
+- **RHEL Variants**: Server, Workstation, Desktop, Client editions
+- **CentOS 5/6/7**: Complete backward compatibility
+- **Ubuntu 10.04+**: Support for very old Ubuntu versions
+- **Debian 6+**: Legacy Debian system support
+- **SUSE 10+**: Enterprise and legacy SUSE support
+- **Embedded systems**: ARM/MIPS IoT devices
+- **Minimal systems**: Containers, chroots, basic init
+
+### **Robust Fallback Methods**
+
+- **Command availability checks**: Tests for tool existence before use
+- **Multiple detection paths**: 12 different detection methods
+- **Error handling**: Graceful degradation with fallback values
+- **Legacy file support**: `/etc/issue`, `/proc/version`, etc.
+- **Minimal dependencies**: Works with basic shell tools only
+- **RHEL-specific detection**: Enhanced patterns for all RHEL versions
+- **Kernel pattern matching**: EL (Enterprise Linux) kernel detection
 
 ## Compatibility
 
-- **Linux**: All major Linux distributions
+- **Linux**: All major Linux distributions (including legacy versions)
 - **macOS**: Limited support (detects as Unix-like)
 - **BSD**: Limited support
 - **WSL**: Full support on Windows Subsystem for Linux
+- **Embedded**: ARM, MIPS, and other embedded Linux systems
+- **Containers**: Docker, LXC, and other containerized environments
 
 ## Contributing
 
@@ -311,6 +433,24 @@ To add support for a new distribution:
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### Version 1.2
+- **Complete RHEL support**: Added comprehensive detection for RHEL 2.1-10
+- **RHEL variants**: Server, Workstation, Desktop, Client edition detection
+- **Enhanced RHEL detection**: Multiple detection methods for all RHEL versions
+- **Kernel pattern matching**: EL (Enterprise Linux) kernel detection (el2-el10)
+- **Scientific Linux**: Added support for RHEL-based scientific distribution
+- **Legacy RHEL files**: Enhanced `/etc/redhat-release` and `/etc/issue` parsing
+- **RHEL-specific functions**: Dedicated RHEL legacy detection methods
+
+### Version 1.1
+- **Legacy compatibility**: Added support for legacy servers and systems
+- **Enhanced detection**: 12 detection methods for maximum compatibility
+- **Embedded systems**: ARM/MIPS detection for IoT devices
+- **Improved system info**: CPU cores, memory, robust fallbacks
+- **Amazon Linux**: Added support for AWS distributions
+- **Legacy distributions**: CentOS, SUSE, minimal systems
+- **Robust error handling**: Graceful degradation on minimal systems
 
 ### Version 1.0
 - Initial release

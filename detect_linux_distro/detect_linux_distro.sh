@@ -2,7 +2,8 @@
 
 # Linux Distribution Detection Script
 # Detects version and flavor of Linux operating systems
-# Supports major distributions and specialized distros
+# Supports major distributions, specialized distros, and legacy systems
+# Compatible with older servers and minimal Linux environments
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,12 +37,22 @@ print_header() {
 # Function to detect distribution from /etc/os-release
 detect_from_os_release() {
     if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        DISTRO_NAME="$NAME"
-        DISTRO_ID="$ID"
-        DISTRO_VERSION="$VERSION_ID"
-        DISTRO_PRETTY="$PRETTY_NAME"
-        DISTRO_VERSION_CODENAME="$VERSION_CODENAME"
+        # Use safer sourcing method for older systems
+        if command -v grep >/dev/null 2>&1; then
+            DISTRO_NAME=$(grep "^NAME=" /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_ID=$(grep "^ID=" /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_VERSION=$(grep "^VERSION_ID=" /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_PRETTY=$(grep "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_VERSION_CODENAME=$(grep "^VERSION_CODENAME=" /etc/os-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+        else
+            # Fallback for systems without grep
+            . /etc/os-release
+            DISTRO_NAME="$NAME"
+            DISTRO_ID="$ID"
+            DISTRO_VERSION="$VERSION_ID"
+            DISTRO_PRETTY="$PRETTY_NAME"
+            DISTRO_VERSION_CODENAME="$VERSION_CODENAME"
+        fi
         return 0
     fi
     return 1
@@ -50,11 +61,20 @@ detect_from_os_release() {
 # Function to detect distribution from /etc/lsb-release
 detect_from_lsb_release() {
     if [ -f /etc/lsb-release ]; then
-        . /etc/lsb-release
-        DISTRO_NAME="$DISTRIB_ID"
-        DISTRO_VERSION="$DISTRIB_RELEASE"
-        DISTRO_CODENAME="$DISTRIB_CODENAME"
-        DISTRO_DESCRIPTION="$DISTRIB_DESCRIPTION"
+        # Use safer sourcing method for older systems
+        if command -v grep >/dev/null 2>&1; then
+            DISTRO_NAME=$(grep "^DISTRIB_ID=" /etc/lsb-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_VERSION=$(grep "^DISTRIB_RELEASE=" /etc/lsb-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_CODENAME=$(grep "^DISTRIB_CODENAME=" /etc/lsb-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+            DISTRO_DESCRIPTION=$(grep "^DISTRIB_DESCRIPTION=" /etc/lsb-release 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -1)
+        else
+            # Fallback for systems without grep
+            . /etc/lsb-release
+            DISTRO_NAME="$DISTRIB_ID"
+            DISTRO_VERSION="$DISTRIB_RELEASE"
+            DISTRO_CODENAME="$DISTRIB_CODENAME"
+            DISTRO_DESCRIPTION="$DISTRIB_DESCRIPTION"
+        fi
         return 0
     fi
     return 1
@@ -63,9 +83,76 @@ detect_from_lsb_release() {
 # Function to detect distribution from /etc/redhat-release
 detect_from_redhat_release() {
     if [ -f /etc/redhat-release ]; then
-        DISTRO_NAME=$(cat /etc/redhat-release | awk '{print $1}')
-        DISTRO_VERSION=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
-        DISTRO_FULL=$(cat /etc/redhat-release)
+        local redhat_content=$(cat /etc/redhat-release 2>/dev/null)
+        
+        # Detect RHEL variants and versions
+        if echo "$redhat_content" | grep -qi "red hat enterprise linux"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            
+            # Extract version with comprehensive pattern matching
+            if command -v grep >/dev/null 2>&1; then
+                # Try different version patterns for all RHEL versions
+                DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+                
+                # Handle specific RHEL version patterns
+                if echo "$redhat_content" | grep -qi "release 2\."; then
+                    DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '2\.[0-9]+' | head -1)
+                elif echo "$redhat_content" | grep -qi "release [3-9]"; then
+                    DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[3-9](\.[0-9]+)?' | head -1)
+                elif echo "$redhat_content" | grep -qi "release 10"; then
+                    DISTRO_VERSION="10"
+                fi
+            else
+                # Fallback for systems without grep
+                DISTRO_VERSION=$(echo "$redhat_content" | sed 's/[^0-9.]*\([0-9.]*\).*/\1/' | head -1)
+            fi
+            
+            # Detect RHEL variant (Server, Workstation, etc.)
+            if echo "$redhat_content" | grep -qi "server"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Server"
+            elif echo "$redhat_content" | grep -qi "workstation"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Workstation"
+            elif echo "$redhat_content" | grep -qi "desktop"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Desktop"
+            elif echo "$redhat_content" | grep -qi "client"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Client"
+            fi
+            
+        elif echo "$redhat_content" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        elif echo "$redhat_content" | grep -qi "scientific"; then
+            DISTRO_NAME="Scientific Linux"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        elif echo "$redhat_content" | grep -qi "oracle"; then
+            DISTRO_NAME="Oracle Linux"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        elif echo "$redhat_content" | grep -qi "rocky"; then
+            DISTRO_NAME="Rocky Linux"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        elif echo "$redhat_content" | grep -qi "alma"; then
+            DISTRO_NAME="AlmaLinux"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        elif echo "$redhat_content" | grep -qi "amazon"; then
+            DISTRO_NAME="Amazon Linux"
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            
+        else
+            # Generic Red Hat family detection
+            if command -v awk >/dev/null 2>&1; then
+                DISTRO_NAME=$(awk '{print $1}' /etc/redhat-release 2>/dev/null)
+            else
+                DISTRO_NAME=$(head -1 /etc/redhat-release 2>/dev/null | cut -d' ' -f1)
+            fi
+            DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        fi
+        
+        DISTRO_FULL="$redhat_content"
         return 0
     fi
     return 1
@@ -351,6 +438,316 @@ detect_asahi() {
     return 1
 }
 
+# Function to detect RHEL from legacy files
+detect_rhel_legacy() {
+    # Check for legacy RHEL files
+    if [ -f /etc/redhat-release ]; then
+        local redhat_content=$(cat /etc/redhat-release 2>/dev/null)
+        
+        # Enhanced RHEL detection for all versions
+        if echo "$redhat_content" | grep -qi "red hat enterprise linux"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            
+            # Comprehensive version detection for all RHEL versions
+            if echo "$redhat_content" | grep -qi "release 2\.[0-9]"; then
+                DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '2\.[0-9]+' | head -1)
+            elif echo "$redhat_content" | grep -qi "release 3"; then
+                DISTRO_VERSION="3"
+            elif echo "$redhat_content" | grep -qi "release 4"; then
+                DISTRO_VERSION="4"
+            elif echo "$redhat_content" | grep -qi "release 5"; then
+                DISTRO_VERSION="5"
+            elif echo "$redhat_content" | grep -qi "release 6"; then
+                DISTRO_VERSION="6"
+            elif echo "$redhat_content" | grep -qi "release 7"; then
+                DISTRO_VERSION="7"
+            elif echo "$redhat_content" | grep -qi "release 8"; then
+                DISTRO_VERSION="8"
+            elif echo "$redhat_content" | grep -qi "release 9"; then
+                DISTRO_VERSION="9"
+            elif echo "$redhat_content" | grep -qi "release 10"; then
+                DISTRO_VERSION="10"
+            else
+                DISTRO_VERSION=$(echo "$redhat_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            fi
+            
+            # Detect RHEL variant
+            if echo "$redhat_content" | grep -qi "server"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Server"
+            elif echo "$redhat_content" | grep -qi "workstation"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Workstation"
+            elif echo "$redhat_content" | grep -qi "desktop"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Desktop"
+            elif echo "$redhat_content" | grep -qi "client"; then
+                DISTRO_NAME="Red Hat Enterprise Linux Client"
+            fi
+            
+            DISTRO_FULL="$redhat_content"
+            return 0
+        fi
+    fi
+    
+    # Check for legacy RHEL kernel patterns
+    if [ -f /proc/version ]; then
+        local proc_version=$(cat /proc/version 2>/dev/null)
+        if echo "$proc_version" | grep -qi "redhat.*el[0-9]"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            
+            # Extract RHEL version from kernel (el2, el3, etc.)
+            if echo "$proc_version" | grep -qi "el2"; then
+                DISTRO_VERSION="2"
+            elif echo "$proc_version" | grep -qi "el3"; then
+                DISTRO_VERSION="3"
+            elif echo "$proc_version" | grep -qi "el4"; then
+                DISTRO_VERSION="4"
+            elif echo "$proc_version" | grep -qi "el5"; then
+                DISTRO_VERSION="5"
+            elif echo "$proc_version" | grep -qi "el6"; then
+                DISTRO_VERSION="6"
+            elif echo "$proc_version" | grep -qi "el7"; then
+                DISTRO_VERSION="7"
+            elif echo "$proc_version" | grep -qi "el8"; then
+                DISTRO_VERSION="8"
+            elif echo "$proc_version" | grep -qi "el9"; then
+                DISTRO_VERSION="9"
+            elif echo "$proc_version" | grep -qi "el10"; then
+                DISTRO_VERSION="10"
+            fi
+            
+            DISTRO_FULL="$proc_version"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+# Legacy detection methods for older systems
+
+# Function to detect from /etc/issue (legacy method)
+detect_from_issue() {
+    if [ -f /etc/issue ]; then
+        local issue_content=$(cat /etc/issue 2>/dev/null)
+        if echo "$issue_content" | grep -qi "ubuntu"; then
+            DISTRO_NAME="Ubuntu"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$issue_content" | grep -qi "debian"; then
+            DISTRO_NAME="Debian"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$issue_content" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$issue_content" | grep -qi "red hat enterprise linux"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            # Enhanced RHEL version detection from issue file
+            if echo "$issue_content" | grep -qi "release 2\."; then
+                DISTRO_VERSION=$(echo "$issue_content" | grep -oE '2\.[0-9]+' | head -1)
+            elif echo "$issue_content" | grep -qi "release [3-9]"; then
+                DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[3-9](\.[0-9]+)?' | head -1)
+            elif echo "$issue_content" | grep -qi "release 10"; then
+                DISTRO_VERSION="10"
+            else
+                DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            fi
+        elif echo "$issue_content" | grep -qi "red hat"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$issue_content" | grep -qi "fedora"; then
+            DISTRO_NAME="Fedora"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+' | head -1)
+        elif echo "$issue_content" | grep -qi "suse"; then
+            DISTRO_NAME="SUSE"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$issue_content" | grep -qi "slackware"; then
+            DISTRO_NAME="Slackware"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$issue_content" | grep -qi "scientific"; then
+            DISTRO_NAME="Scientific Linux"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$issue_content" | grep -qi "oracle"; then
+            DISTRO_NAME="Oracle Linux"
+            DISTRO_VERSION=$(echo "$issue_content" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        fi
+        DISTRO_FULL="$issue_content"
+        return 0
+    fi
+    return 1
+}
+
+# Function to detect from /proc/version (kernel-based detection)
+detect_from_proc_version() {
+    if [ -f /proc/version ]; then
+        local proc_version=$(cat /proc/version 2>/dev/null)
+        if echo "$proc_version" | grep -qi "ubuntu"; then
+            DISTRO_NAME="Ubuntu"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$proc_version" | grep -qi "debian"; then
+            DISTRO_NAME="Debian"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$proc_version" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$proc_version" | grep -qi "redhat"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            # Enhanced RHEL version detection from kernel
+            if echo "$proc_version" | grep -qi "el2"; then
+                DISTRO_VERSION="2"
+            elif echo "$proc_version" | grep -qi "el3"; then
+                DISTRO_VERSION="3"
+            elif echo "$proc_version" | grep -qi "el4"; then
+                DISTRO_VERSION="4"
+            elif echo "$proc_version" | grep -qi "el5"; then
+                DISTRO_VERSION="5"
+            elif echo "$proc_version" | grep -qi "el6"; then
+                DISTRO_VERSION="6"
+            elif echo "$proc_version" | grep -qi "el7"; then
+                DISTRO_VERSION="7"
+            elif echo "$proc_version" | grep -qi "el8"; then
+                DISTRO_VERSION="8"
+            elif echo "$proc_version" | grep -qi "el9"; then
+                DISTRO_VERSION="9"
+            elif echo "$proc_version" | grep -qi "el10"; then
+                DISTRO_VERSION="10"
+            else
+                DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+            fi
+        elif echo "$proc_version" | grep -qi "fedora"; then
+            DISTRO_NAME="Fedora"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+' | head -1)
+        elif echo "$proc_version" | grep -qi "suse"; then
+            DISTRO_NAME="SUSE"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$proc_version" | grep -qi "slackware"; then
+            DISTRO_NAME="Slackware"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$proc_version" | grep -qi "gentoo"; then
+            DISTRO_NAME="Gentoo"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$proc_version" | grep -qi "scientific"; then
+            DISTRO_NAME="Scientific Linux"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        elif echo "$proc_version" | grep -qi "oracle"; then
+            DISTRO_NAME="Oracle Linux"
+            DISTRO_VERSION=$(echo "$proc_version" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+        fi
+        DISTRO_FULL="$proc_version"
+        return 0
+    fi
+    return 1
+}
+
+# Function to detect from /etc/system-release (Amazon Linux, etc.)
+detect_from_system_release() {
+    if [ -f /etc/system-release ]; then
+        local system_release=$(cat /etc/system-release 2>/dev/null)
+        if echo "$system_release" | grep -qi "amazon"; then
+            DISTRO_NAME="Amazon Linux"
+            DISTRO_VERSION=$(echo "$system_release" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$system_release" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION=$(echo "$system_release" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$system_release" | grep -qi "red hat"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            DISTRO_VERSION=$(echo "$system_release" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        else
+            DISTRO_NAME=$(echo "$system_release" | awk '{print $1}')
+            DISTRO_VERSION=$(echo "$system_release" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        fi
+        DISTRO_FULL="$system_release"
+        return 0
+    fi
+    return 1
+}
+
+# Function to detect from /etc/release (Solaris-like systems)
+detect_from_release() {
+    if [ -f /etc/release ]; then
+        local release_content=$(cat /etc/release 2>/dev/null)
+        if echo "$release_content" | grep -qi "oracle"; then
+            DISTRO_NAME="Oracle Linux"
+            DISTRO_VERSION=$(echo "$release_content" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        elif echo "$release_content" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION=$(echo "$release_content" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        else
+            DISTRO_NAME=$(echo "$release_content" | awk '{print $1}')
+            DISTRO_VERSION=$(echo "$release_content" | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        fi
+        DISTRO_FULL="$release_content"
+        return 0
+    fi
+    return 1
+}
+
+# Function to detect from uname -a (last resort)
+detect_from_uname() {
+    if command -v uname >/dev/null 2>&1; then
+        local uname_output=$(uname -a 2>/dev/null)
+        if echo "$uname_output" | grep -qi "ubuntu"; then
+            DISTRO_NAME="Ubuntu"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "debian"; then
+            DISTRO_NAME="Debian"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "centos"; then
+            DISTRO_NAME="CentOS"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "redhat"; then
+            DISTRO_NAME="Red Hat Enterprise Linux"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "fedora"; then
+            DISTRO_NAME="Fedora"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "suse"; then
+            DISTRO_NAME="SUSE"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "slackware"; then
+            DISTRO_NAME="Slackware"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "gentoo"; then
+            DISTRO_NAME="Gentoo"
+            DISTRO_VERSION="Unknown"
+        elif echo "$uname_output" | grep -qi "arch"; then
+            DISTRO_NAME="Arch Linux"
+            DISTRO_VERSION="Unknown"
+        else
+            DISTRO_NAME="Linux"
+            DISTRO_VERSION="Unknown"
+        fi
+        DISTRO_FULL="$uname_output"
+        return 0
+    fi
+    return 1
+}
+
+# Function to detect embedded systems
+detect_embedded() {
+    # Check for embedded Linux indicators
+    if [ -f /proc/cpuinfo ]; then
+        local cpuinfo=$(cat /proc/cpuinfo 2>/dev/null)
+        if echo "$cpuinfo" | grep -qi "arm"; then
+            DISTRO_NAME="Embedded Linux (ARM)"
+            DISTRO_VERSION="Unknown"
+            return 0
+        elif echo "$cpuinfo" | grep -qi "mips"; then
+            DISTRO_NAME="Embedded Linux (MIPS)"
+            DISTRO_VERSION="Unknown"
+            return 0
+        fi
+    fi
+    
+    # Check for minimal systems
+    if [ -f /etc/init.d/rcS ] || [ -f /etc/inittab ]; then
+        if [ ! -f /etc/os-release ] && [ ! -f /etc/lsb-release ]; then
+            DISTRO_NAME="Minimal Linux"
+            DISTRO_VERSION="Unknown"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
 # Function to get additional system information
 get_system_info() {
     if [ "$JSON_OUTPUT" = "true" ]; then
@@ -359,19 +756,59 @@ get_system_info() {
     
     print_header "System Information"
     
-    echo -e "${CYAN}Kernel:${NC} $(uname -r)"
-    echo -e "${CYAN}Architecture:${NC} $(uname -m)"
-    echo -e "${CYAN}Hostname:${NC} $(hostname)"
-    echo -e "${CYAN}Uptime:${NC} $(uptime -p 2>/dev/null || uptime)"
+    # Kernel information with fallbacks
+    if command -v uname >/dev/null 2>&1; then
+        echo -e "${CYAN}Kernel:${NC} $(uname -r 2>/dev/null || echo 'Unknown')"
+        echo -e "${CYAN}Architecture:${NC} $(uname -m 2>/dev/null || echo 'Unknown')"
+    else
+        echo -e "${CYAN}Kernel:${NC} Unknown"
+        echo -e "${CYAN}Architecture:${NC} Unknown"
+    fi
+    
+    # Hostname with fallbacks
+    if command -v hostname >/dev/null 2>&1; then
+        echo -e "${CYAN}Hostname:${NC} $(hostname 2>/dev/null || echo 'Unknown')"
+    elif [ -f /proc/sys/kernel/hostname ]; then
+        echo -e "${CYAN}Hostname:${NC} $(cat /proc/sys/kernel/hostname 2>/dev/null || echo 'Unknown')"
+    else
+        echo -e "${CYAN}Hostname:${NC} Unknown"
+    fi
+    
+    # Uptime with fallbacks
+    if command -v uptime >/dev/null 2>&1; then
+        if uptime -p >/dev/null 2>&1; then
+            echo -e "${CYAN}Uptime:${NC} $(uptime -p 2>/dev/null)"
+        else
+            echo -e "${CYAN}Uptime:${NC} $(uptime 2>/dev/null)"
+        fi
+    elif [ -f /proc/uptime ]; then
+        local uptime_seconds=$(cat /proc/uptime 2>/dev/null | cut -d' ' -f1)
+        if [ -n "$uptime_seconds" ]; then
+            local days=$((uptime_seconds / 86400))
+            local hours=$(((uptime_seconds % 86400) / 3600))
+            local minutes=$(((uptime_seconds % 3600) / 60))
+            echo -e "${CYAN}Uptime:${NC} up ${days} days, ${hours} hours, ${minutes} minutes"
+        else
+            echo -e "${CYAN}Uptime:${NC} Unknown"
+        fi
+    else
+        echo -e "${CYAN}Uptime:${NC} Unknown"
+    fi
     
     # Get desktop environment
     if [ -n "$XDG_CURRENT_DESKTOP" ]; then
         echo -e "${CYAN}Desktop Environment:${NC} $XDG_CURRENT_DESKTOP"
     elif [ -n "$DESKTOP_SESSION" ]; then
         echo -e "${CYAN}Desktop Environment:${NC} $DESKTOP_SESSION"
+    elif [ -n "$GNOME_DESKTOP_SESSION_ID" ]; then
+        echo -e "${CYAN}Desktop Environment:${NC} GNOME"
+    elif [ -n "$KDE_FULL_SESSION" ]; then
+        echo -e "${CYAN}Desktop Environment:${NC} KDE"
+    elif [ -n "$XFCE_DESKTOP" ]; then
+        echo -e "${CYAN}Desktop Environment:${NC} XFCE"
     fi
     
-    # Get package manager
+    # Get package manager with more comprehensive detection
     if command -v apt >/dev/null 2>&1; then
         echo -e "${CYAN}Package Manager:${NC} APT (Advanced Package Tool)"
     elif command -v yum >/dev/null 2>&1; then
@@ -388,6 +825,28 @@ get_system_info() {
         echo -e "${CYAN}Package Manager:${NC} APK (Alpine)"
     elif command -v xbps-install >/dev/null 2>&1; then
         echo -e "${CYAN}Package Manager:${NC} XBPS (Void)"
+    elif command -v rpm >/dev/null 2>&1; then
+        echo -e "${CYAN}Package Manager:${NC} RPM (Red Hat Package Manager)"
+    elif command -v dpkg >/dev/null 2>&1; then
+        echo -e "${CYAN}Package Manager:${NC} DPKG (Debian Package Manager)"
+    elif command -v pkg >/dev/null 2>&1; then
+        echo -e "${CYAN}Package Manager:${NC} PKG (Generic Package Manager)"
+    fi
+    
+    # Additional legacy system information
+    if [ -f /proc/cpuinfo ]; then
+        local cpu_count=$(grep -c "^processor" /proc/cpuinfo 2>/dev/null)
+        if [ -n "$cpu_count" ] && [ "$cpu_count" -gt 0 ]; then
+            echo -e "${CYAN}CPU Cores:${NC} $cpu_count"
+        fi
+    fi
+    
+    if [ -f /proc/meminfo ]; then
+        local total_mem=$(grep "^MemTotal:" /proc/meminfo 2>/dev/null | awk '{print $2}')
+        if [ -n "$total_mem" ]; then
+            local mem_gb=$((total_mem / 1024 / 1024))
+            echo -e "${CYAN}Total Memory:${NC} ${mem_gb}GB"
+        fi
     fi
 }
 
@@ -400,7 +859,7 @@ categorize_distro() {
         "Ubuntu"|"Debian"|"Linux Mint"|"Fedora"|"openSUSE"|"elementary OS"|"Zorin OS"|"Pop!_OS"|"Lubuntu"|"Xubuntu"|"Kubuntu"|"KDE neon")
             category="General Purpose / Desktop"
             ;;
-        "Red Hat Enterprise Linux"|"CentOS Stream"|"Oracle Linux"|"Rocky Linux"|"AlmaLinux")
+        "Red Hat Enterprise Linux"|"Red Hat Enterprise Linux Server"|"Red Hat Enterprise Linux Workstation"|"Red Hat Enterprise Linux Desktop"|"Red Hat Enterprise Linux Client"|"CentOS Stream"|"CentOS"|"Oracle Linux"|"Rocky Linux"|"AlmaLinux"|"Amazon Linux"|"Scientific Linux")
             category="Enterprise / Server"
             ;;
         "Puppy Linux"|"antiX"|"Tiny Core Linux"|"4MLinux")
@@ -412,11 +871,17 @@ categorize_distro() {
         "Arch Linux"|"Manjaro"|"EndeavourOS"|"Gentoo"|"Void Linux")
             category="Rolling Release / Bleeding Edge"
             ;;
-        "Alpine Linux"|"Slackware")
+        "Alpine Linux"|"Slackware"|"SUSE")
             category="Minimal / Specialized"
             ;;
         "Asahi Linux")
             category="Specialized / ARM"
+            ;;
+        "Embedded Linux (ARM)"|"Embedded Linux (MIPS)"|"Minimal Linux")
+            category="Embedded / Minimal"
+            ;;
+        "Linux")
+            category="Generic / Unknown"
             ;;
         *)
             category="Other / Unknown"
@@ -475,6 +940,53 @@ output_json() {
     local distro_description="${DISTRO_DESCRIPTION:-}"
     local distro_full="${DISTRO_FULL:-}"
     
+    # Get system information with fallbacks
+    local kernel="Unknown"
+    local architecture="Unknown"
+    local hostname="Unknown"
+    local uptime="Unknown"
+    local cpu_cores="Unknown"
+    local total_memory="Unknown"
+    
+    if command -v uname >/dev/null 2>&1; then
+        kernel=$(uname -r 2>/dev/null || echo "Unknown")
+        architecture=$(uname -m 2>/dev/null || echo "Unknown")
+    fi
+    
+    if command -v hostname >/dev/null 2>&1; then
+        hostname=$(hostname 2>/dev/null || echo "Unknown")
+    elif [ -f /proc/sys/kernel/hostname ]; then
+        hostname=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "Unknown")
+    fi
+    
+    if command -v uptime >/dev/null 2>&1; then
+        if uptime -p >/dev/null 2>&1; then
+            uptime=$(uptime -p 2>/dev/null || echo "Unknown")
+        else
+            uptime=$(uptime 2>/dev/null || echo "Unknown")
+        fi
+    elif [ -f /proc/uptime ]; then
+        local uptime_seconds=$(cat /proc/uptime 2>/dev/null | cut -d' ' -f1)
+        if [ -n "$uptime_seconds" ]; then
+            local days=$((uptime_seconds / 86400))
+            local hours=$(((uptime_seconds % 86400) / 3600))
+            local minutes=$(((uptime_seconds % 3600) / 60))
+            uptime="up ${days} days, ${hours} hours, ${minutes} minutes"
+        fi
+    fi
+    
+    if [ -f /proc/cpuinfo ]; then
+        cpu_cores=$(grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo "Unknown")
+    fi
+    
+    if [ -f /proc/meminfo ]; then
+        local total_mem=$(grep "^MemTotal:" /proc/meminfo 2>/dev/null | awk '{print $2}')
+        if [ -n "$total_mem" ]; then
+            local mem_gb=$((total_mem / 1024 / 1024))
+            total_memory="${mem_gb}GB"
+        fi
+    fi
+    
     cat << EOF
 {
   "distribution": {
@@ -488,17 +1000,20 @@ output_json() {
     "category": "$category"
   },
   "system": {
-    "kernel": "$(uname -r)",
-    "architecture": "$(uname -m)",
-    "hostname": "$(hostname)",
-    "uptime": "$(uptime -p 2>/dev/null || uptime)",
+    "kernel": "$kernel",
+    "architecture": "$architecture",
+    "hostname": "$hostname",
+    "uptime": "$uptime",
     "desktop_environment": "$desktop_env",
-    "package_manager": "$package_manager"
+    "package_manager": "$package_manager",
+    "cpu_cores": "$cpu_cores",
+    "total_memory": "$total_memory"
   },
   "detection": {
-    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "Unknown")",
     "method": "shell_script",
-    "script_version": "1.0"
+    "script_version": "1.1",
+    "legacy_compatible": true
   }
 }
 EOF
@@ -533,6 +1048,14 @@ detect_distribution() {
         if [ "$JSON_OUTPUT" != "true" ]; then
             print_info "Detected from /etc/redhat-release"
         fi
+    elif detect_from_system_release; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected from /etc/system-release"
+        fi
+    elif detect_from_release; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected from /etc/release"
+        fi
     elif detect_from_debian_version; then
         if [ "$JSON_OUTPUT" != "true" ]; then
             print_info "Detected from /etc/debian_version"
@@ -565,9 +1088,25 @@ detect_distribution() {
         if [ "$JSON_OUTPUT" != "true" ]; then
             print_info "Detected from /etc/tinycore-release"
         fi
+    elif detect_from_issue; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected from /etc/issue (legacy)"
+        fi
+    elif detect_from_proc_version; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected from /proc/version (kernel-based)"
+        fi
+    elif detect_embedded; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected embedded/minimal system"
+        fi
+    elif detect_from_uname; then
+        if [ "$JSON_OUTPUT" != "true" ]; then
+            print_info "Detected from uname (last resort)"
+        fi
     else
         if [ "$JSON_OUTPUT" != "true" ]; then
-            print_warning "Could not detect distribution from standard files"
+            print_warning "Could not detect distribution from any available method"
         fi
         DISTRO_NAME="Unknown"
         DISTRO_VERSION="Unknown"
@@ -575,7 +1114,11 @@ detect_distribution() {
     
     # Try specialized detection methods
     if [ -z "$DISTRO_NAME" ] || [ "$DISTRO_NAME" = "Unknown" ]; then
-        if detect_kali; then
+        if detect_rhel_legacy; then
+            if [ "$JSON_OUTPUT" != "true" ]; then
+                print_info "Detected RHEL legacy system"
+            fi
+        elif detect_kali; then
             if [ "$JSON_OUTPUT" != "true" ]; then
                 print_info "Detected specialized distribution: Kali Linux"
             fi
